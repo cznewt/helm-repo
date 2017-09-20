@@ -16,12 +16,3 @@
         {{- printf "%s" .Values.kafka.externalAddress -}}
     {{- end -}}
 {{- end -}}
-
-{{- define "videopub.hdfs-address" -}}
-    {{- if .Values.hdfs.deployChart -}}
-        {{- template "namenode-fullname" . -}}-0.{{- template "namenode-fullname" . -}}:{{ .Values.hdfs.namenode.ui.port }}
-    {{- else -}}
-        {{- printf "%s" .Values.hdfs.externalAddress -}}
-    {{- end -}}
-{{- end -}}
-

@@ -2,5 +2,4 @@
 videopub
 ========
 
-publish video streams to Apache Kafka.
-
+Publish MJPG video streams to Apache Kafka.

@@ -3,7 +3,3 @@ dependencies:
   version: ^1.x
   repository: https://mirantisworkloads.storage.googleapis.com/
   condition: kafka.deployChart
-- name: hdfs
-  version: ^2.x
-  repository: https://mirantisworkloads.storage.googleapis.com/
-  condition: hdfs.deployChart
