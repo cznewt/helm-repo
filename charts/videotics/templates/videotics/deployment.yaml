@@ -1,0 +1,26 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ template "videotics.fullname" . }}
+  labels:
+    heritage: "{{ .Release.Service }}"
+    release: "{{ .Release.Name }}"
+    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
+    app: {{ template "videotics.fullname" . }}
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: {{ template "videotics.fullname" . }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}{{ .Values.image.name }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command:
+          - "bash"
+          - "-c"
+          - "spark-submit --master spark://{{ template "videotics.spark-address" . }} {{- if eq .Values.storage "cassandra"}} --conf=spark.cassandra.connection.host={{ template "videotics.cassandra-address" . }} {{- end }} --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.1.0 spark_hashtags_count.py spark://{{ template "videotics.spark-address" . }} {{ template "videotics.zk-address" . }} {{ .Values.kafka.topic }} {{ .Values.minHashtagCounts }} {{ .Values.spark.batchDuration }} {{ .Values.storage }} {{ template "videotics-storage" . }}"
+        resources:
+{{ toYaml .Values.resources | indent 12 }}

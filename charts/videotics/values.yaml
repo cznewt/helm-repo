@@ -1,0 +1,64 @@
+# Default values for videotics.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+image:
+  repository: mirantisworkloads/
+  name: videotics
+  tag: 1.2.0
+  pullPolicy: IfNotPresent
+
+# Filter out hashtags with less then specified count
+minHashtagCounts: 0
+storage: "hdfs" # hdfs or cassandra
+
+zookeeper:
+  # if disabled, subchart will not be deployed
+  deployChart: false
+  # this address will be used if subchart deployment is disabled
+  # Required
+  externalAddress: ""
+
+kafka:
+  # if disabled, subchart will not be deployed
+  deployChart: false
+  # this address will be used if subchart deployment is disabled
+  externalAddress: ""
+  # Kafka topic name
+  topic: twitter-stream
+  zookeeper:
+    deployChart: false
+    # Required
+    externalAddress: ""
+
+spark:
+  # if disabled, subchart will not be deployed
+  deployChart: true
+  # this address will be used if subchart deployment is disabled
+  externalAddress: ""
+  # Spark streaming batch duration
+  batchDuration: 5
+  zookeeper:
+    deployChart: false
+    # Required
+    externalAddress: ""
+
+hdfs:
+  # if disabled, subchart will not be deployed
+  deployChart: true
+  # this address will be used if subchart deployment is disabled
+  externalAddress: ""
+  path: /demo
+
+cassandra:
+  deployChart: false
+  externalAddress: ""
+  keyspace: "mirantis"
+  table: "videotics"
+
+resources:
+  #requests:
+  #  cpu: 100m
+  #  memory: 512Mi
+  #limits:
+  #  cpu: 100m
+  #  memory: 512Mi

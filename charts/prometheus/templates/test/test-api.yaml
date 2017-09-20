@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: prometheus-api-test-{{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+    - name: prometheus-api-test-{{ .Release.Name }}
+      image: {{ .Values.server.image.testImage }}:{{ .Values.server.image.testImageTag }}
+      command:
+      - /bin/sh
+      - -o
+      - pipefail
+      - -exc
+      - 'for i in $(seq 1 6); do date; if [ "$(curl --connect-timeout 10 -v {{ template "server.fullname" . }}/api/v1/query?query=kube_node_info | jq -r .status)" == success ]; then return 0; fi; done; return 1'
+  restartPolicy: Never

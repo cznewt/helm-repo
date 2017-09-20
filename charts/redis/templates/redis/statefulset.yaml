@@ -1,0 +1,161 @@
+kind: StatefulSet
+apiVersion: apps/v1beta1
+metadata:
+  name: {{ template "redis-fullname" . }}
+  labels:
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    app: {{ template "redis-fullname" . }}
+spec:
+  serviceName: {{ template "sentinel-svc-fullname" . }}
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "redis-fullname" . }}
+      annotations:
+        {{- if .Values.prometheusExporter.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9121"
+        {{- end }}
+    spec:
+      {{- if eq .Values.antiAffinity "hard"}}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values: ["{{ template "redis-fullname" . }}"]
+            topologyKey: kubernetes.io/hostname
+      {{- else if eq .Values.antiAffinity "soft"}}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["{{ template "redis-fullname" . }}"]
+              topologyKey: kubernetes.io/hostname
+      {{- end}}
+      containers:
+      - name: redis
+        image: {{ .Values.image.repository }}{{ .Values.image.name }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: MASTER_DATA
+          value: /var/lib/redis
+        - name: CLUSTER_SERVICE_NAME
+          value: {{ template "cluster-svc-fullname" . }}
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: {{ .Values.probeInitialDelaySeconds }}
+          timeoutSeconds: {{ .Values.probeTimeoutSeconds }}
+        ports:
+        - name: redis
+          containerPort: {{ default 6379 .Values.config.redisPort }}
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/redis
+        - name: redis-cfg
+          mountPath: /opt/redis/conf
+        {{- if .Values.logCollector.enabled }}
+        - name: logdir
+          mountPath: /var/log/redis
+        {{- end }}
+      {{- if .Values.logCollector.enabled }}
+      - name: filebeat
+        image: "{{ .Values.logCollector.image.repository }}{{ .Values.logCollector.image.name }}:{{ .Values.logCollector.image.tag }}"
+        imagePullPolicy: {{ .Values.logCollector.image.pullPolicy | quote }}
+        volumeMounts:
+        - name: filebeat-config
+          mountPath: /etc/filebeat
+        - name: logdir
+          mountPath: /var/log/redis
+        command:
+          - "filebeat"
+          - "-c"
+          - "/etc/filebeat/filebeat.yml"
+          - "-e"
+          - "-d"
+          - "\"*\""
+      {{- end }}
+      - name: sentinel
+        image: {{ .Values.image.repository }}{{ .Values.image.name }}:{{ .Values.image.tag }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: SENTINEL
+          value: "true"
+        - name: CLUSTER_SERVICE_NAME
+          value: {{ template "cluster-svc-fullname" . }}
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: {{ .Values.probeInitialDelaySeconds }}
+          timeoutSeconds: {{ .Values.probeTimeoutSeconds }}
+        ports:
+        - name: sentinel
+          containerPort: {{ default 26379 .Values.config.sentinelPort }}
+        volumeMounts:
+        - name: sentinel-cfg
+          mountPath: /opt/redis/conf
+      {{- if .Values.prometheusExporter.enabled }}
+      - name: metrics
+        image: {{ .Values.prometheusExporter.image.repository }}{{ .Values.prometheusExporter.image.name }}:{{ .Values.prometheusExporter.image.tag }}
+        imagePullPolicy: {{ .Values.prometheusExporter.image.pullPolicy }}
+        ports:
+        - containerPort: 9121
+      {{- end }}
+      volumes:
+      - name: redis-cfg
+        configMap:
+          name: {{ template "redis-fullname" . }}
+      - name: sentinel-cfg
+        configMap:
+          name: {{ template "sentinel-fullname" . }}
+      {{- if eq .Values.persistence.type "emptyDir" }}
+      - name: data
+        emptyDir: {}
+      {{- else if eq .Values.persistence.type "hostPath" }}
+      - name: data
+        hostPath:
+          path: "{{ .Values.persistence.hostPath }}"
+      {{- end }}
+      {{- if .Values.logCollector.enabled }}
+      - name: filebeat-config
+        configMap:
+          name: {{ printf "redis-fb-%s" .Release.Name | trunc 55 | trimSuffix "-" }}
+          items:
+            - key: filebeat-yml
+              path: filebeat.yml
+      - name: logdir
+        emptyDir: {}
+      {{- end }}
+{{- if eq .Values.persistence.type "PersistentVolumeClaim" }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      {{- if .Values.persistence.storageClass }}
+      annotations:
+        volume.beta.kubernetes.io/storage-class: {{ .Values.persistence.storageClass | quote }}
+      {{- end }}
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: ReadWriteOnce
+{{- end }}

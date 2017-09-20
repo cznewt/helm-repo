@@ -1,0 +1,25 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ printf "zeppelin-fb-%s" .Release.Name | trunc 55 | trimSuffix "-" }}
+  labels:
+    heritage: {{ .Release.Service | quote }}
+    release: {{ .Release.Name | quote }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    app: {{ template "zeppelin.fullname" . }}
+data:
+  filebeat-yml: |-
+    filebeat.prospectors:
+      - input_type: log
+        paths:
+        - /zeppelin-0.7.1-bin-all/logs/*.log
+        fields:
+          log_host: "zeppelin"
+    output.logstash:
+      hosts:
+      {{- range .Values.logCollector.logstashHost }}
+      - {{ . | quote }}
+      {{- end }}
+    path:
+      data: "/usr/share/filebeat/data"
+      home: "/usr/share/filebeat"

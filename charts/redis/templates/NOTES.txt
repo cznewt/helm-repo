@@ -1,0 +1,6 @@
+Redis has been deployed!
+
+Internal URL:
+    redis: {{ template "redis-address" . }}
+To run simple test:
+    helm test {{ .Release.Name }} --cleanup

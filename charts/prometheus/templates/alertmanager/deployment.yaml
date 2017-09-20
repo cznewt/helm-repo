@@ -1,0 +1,77 @@
+{{- if .Values.alertmanager.enabled -}}
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    component: alertmanager
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  name: {{ template "alertmanager.fullname" . }}
+spec:
+  replicas: {{ .Values.alertmanager.replicas }}
+  template:
+    metadata:
+    {{- if .Values.alertmanager.podAnnotations }}
+      annotations:
+{{ toYaml .Values.alertmanager.podAnnotations | indent 8 }}
+    {{- end }}
+      labels:
+        app: {{ template "name" . }}
+        component: alertmanager
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: alertmanager
+          image: "{{ .Values.alertmanager.image.repository }}{{ .Values.alertmanager.image.name }}:{{ .Values.alertmanager.image.tag }}"
+          imagePullPolicy: "{{ .Values.alertmanager.image.pullPolicy }}"
+          args:
+            - --config.file=/etc/config/alertmanager.yml
+            - --storage.path=/data
+          {{- range $key, $value := .Values.alertmanager.extraArgs }}
+            - --{{ $key }}={{ $value }}
+          {{- end }}
+          ports:
+            - containerPort: 9093
+          readinessProbe:
+            httpGet:
+              path: /#/status
+              port: 9093
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          resources:
+{{ toYaml .Values.alertmanager.resources | indent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config
+            - name: storage-volume
+              mountPath: /data
+
+        - name: configmap-reload
+          image: "{{ .Values.configmapReload.image.repository }}{{ .Values.configmapReload.image.name }}:{{ .Values.configmapReload.image.tag }}"
+          imagePullPolicy: "{{ .Values.configmapReload.image.pullPolicy }}"
+          args:
+            - --volume-dir=/etc/config
+            - --webhook-url=http://localhost:9093/-/reload
+          resources:
+{{ toYaml .Values.configmapReload.resources | indent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config
+              readOnly: true
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ template "alertmanager.fullname" . }}
+        - name: storage-volume
+        {{- if eq .Values.server.persistence.type "PersistentVolumeClaim" }}
+          persistentVolumeClaim:
+            claimName: {{ template "alertmanager.fullname" . }}
+        {{- else if eq .Values.alertmanager.persistence.type "emptyDir" }}
+          emptyDir: {}
+        {{- else if eq .Values.alertmanager.persistence.type "hostPath" }}
+          hostPath:
+            path: "{{ .Values.alertmanager.persistence.hostPath }}"
+        {{- end }}
+{{- end }}

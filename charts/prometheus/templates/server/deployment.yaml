@@ -1,0 +1,111 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: {{ template "name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    component: server
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  name: {{ template "server.fullname" . }}
+spec:
+  replicas: {{ .Values.server.replicas }}
+  template:
+    metadata:
+    {{- if .Values.server.podAnnotations }}
+      annotations:
+{{ toYaml .Values.server.podAnnotations | indent 8 }}
+    {{- end }}
+      labels:
+        app: {{ template "name" . }}
+        component: server
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: configmap-reload
+          image: "{{ .Values.configmapReload.image.repository }}{{ .Values.configmapReload.image.name }}:{{ .Values.configmapReload.image.tag }}"
+          imagePullPolicy: "{{ .Values.configmapReload.image.pullPolicy }}"
+          args:
+            - --volume-dir=/etc/config
+            - --webhook-url=http://localhost:9090/-/reload
+          resources:
+{{ toYaml .Values.configmapReload.resources | indent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config
+              readOnly: true
+
+        - name: server
+          image: "{{ .Values.server.image.repository }}{{ .Values.server.image.name }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: "{{ .Values.server.image.pullPolicy }}"
+          command:
+            - "sh"
+            - "-c"
+            - "prometheus --config.file=/etc/config/prometheus.yml {{ if .Values.alertmanager.enabled }} --alertmanager.url={{ template "alertmanager.address" . }}{{ end }} --storage.local.path=/data --web.console.libraries=/etc/prometheus/console_libraries --web.console.templates=/etc/prometheus/consoles {{ range $key, $value := .Values.server.extraArgs }} --{{ $key }}={{ $value }} {{ end }} | tee /prometheus/prom.log"
+          ports:
+            - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 15
+            timeoutSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+            timeoutSeconds: 30
+          resources:
+{{ toYaml .Values.server.resources | indent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config
+            - name: storage-volume
+              mountPath: /data
+            {{- if .Values.logCollector.enabled }}
+            - name: logdir
+              mountPath: /prometheus
+            {{- end }}
+        {{- if .Values.logCollector.enabled }}
+        - name: filebeat
+          image: "{{ .Values.logCollector.image.repository }}{{ .Values.logCollector.image.name }}:{{ .Values.logCollector.image.tag }}"
+          imagePullPolicy: {{ .Values.logCollector.image.pullPolicy | quote }}
+          volumeMounts:
+          - name: filebeat-config
+            mountPath: /etc/filebeat
+          - name: logdir
+            mountPath: /prometheus
+          command:
+            - "filebeat"
+            - "-c"
+            - "/etc/filebeat/filebeat.yml"
+            - "-e"
+            - "-d"
+            - "\"*\""
+        {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ template "server.fullname" . }}
+        - name: storage-volume
+        {{- if eq .Values.server.persistence.type "PersistentVolumeClaim" }}
+          persistentVolumeClaim:
+            claimName: {{ template "server.fullname" . }}
+        {{- else if eq .Values.server.persistence.type "emptyDir" }}
+          emptyDir: {}
+        {{- else if eq .Values.server.persistence.type "hostPath" }}
+          hostPath:
+            path: "{{ .Values.server.persistence.hostPath }}"
+        {{- end }}
+        {{- if .Values.logCollector.enabled }}
+        - name: filebeat-config
+          configMap:
+            name: {{ printf "prom-fb-%s" .Release.Name | trunc 55 | trimSuffix "-" }}
+            items:
+              - key: filebeat-yml
+                path: filebeat.yml
+        - name: logdir
+          emptyDir: {}
+        {{- end }}

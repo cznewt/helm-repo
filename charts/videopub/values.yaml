@@ -1,0 +1,59 @@
+# Default values for videopub.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+image:
+  repository: mirantisworkloads/
+  name: videopub
+  tag: 1.1.0
+  pullPolicy: IfNotPresent
+
+storage: kafka # hdfs or kafka
+
+twitter:
+  # TweePub needs to authorize on Twitter Streaming API to listen for videots
+  # For creating new apps / tokens use: https://apps.twitter.com/
+  # Twitter API Application Key
+  appKey: ""
+  # Twitter API Application Secret
+  appSecret: ""
+  # Twitter API Token Key (w/ write permissions)
+  tokenKey: ""
+  # Twitter API Token Secret
+  tokenSecret: ""
+
+  # At least one of the follow, track and locations should be specified
+  # Detailed doc: https://dev.twitter.com/streaming/overview/request-parameters
+  # A comma-separated list of user IDs to follow
+  #follow: twitter,kubernetesio
+  # A comma-separated list of phrases to follow
+  #track: openstack,kubernetes,k8s,python,golang
+  # A comma-separated list of longitude,latitude pairs specifying a set of
+  # bounding boxes for locations to follow Tweets from
+  # For example, for San Francisco and New York City areas:
+  #locations: -122.75,36.8,-121.75,37.8,-74,40,-73,41
+
+  # Limit filter to the comma-separated list of BCP 47 language identifiers
+  #languages: en
+
+kafka:
+  # if disabled, subchart will not be deployed
+  deployChart: true
+  # this address will be used if subchart deployment is disabled
+  externalAddress: ""
+  # Kafka topic where the videots will be published
+  topic: twitter-stream
+
+hdfs:
+  # if disabled, subchart will not be deployed
+  deployChart: false
+  # this address will be used if subchart deployment is disabled
+  externalAddress: ""
+  path: "/demo/videopub"
+
+resources:
+  #requests:
+  #  cpu: 100m
+  #  memory: 512Mi
+  #limits:
+  #  cpu: 100m
+  #  memory: 512Mi
