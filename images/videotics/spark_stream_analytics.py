@@ -1,65 +1,46 @@
 #!/usr/bin/env python
 
 import sys
+import base64
+import cv2
+import json
+import numpy as np
+import os
 
 import pyspark
 from pyspark import streaming
 from pyspark.streaming import kafka
-from pyspark.sql import SQLContext, Row
-from pyspark.sql.types import *
-
-def create_writer(keyspace, mode="append"):
-    def writer(df, table):
-        df.write.format("org.apache.spark.sql.cassandra").\
-                 options(table=table, keyspace=keyspace).save(mode="append")
-    return writer
-
-def getSqlContextInstance(sparkContext):
-    if ('sqlContextSingletonInstance' not in globals()):
-        globals()['sqlContextSingletonInstance'] = SQLContext(sparkContext)
-    return globals()['sqlContextSingletonInstance']
-
-def getSqlWriter(keyspace):
-    if ('sqlWriter' not in globals()):
-      globals()['sqlWriter'] = create_writer(keyspace)
-    return globals()['sqlWriter']
-
-def write_to_cas(time, rdd):
-    print "============== %s ============" % str(time)
-    _, keyspace, table = storage.split(":")
-    local_sql = getSqlContextInstance(rdd.context)
-    data = local_sql.read.format("org.apache.spark.sql.cassandra").load(keyspace=keyspace, table=table)
-    writer = getSqlWriter(keyspace)
-    rdd = rdd.map(lambda line: line.split())
-    rdd = rdd.map(lambda(_, count): (_, int(count)))
-    schema = StructType([
-      StructField("hashtag", StringType(), False),
-      StructField("count", IntegerType(), False)])
-    stream = rdd.toDF(schema)
-    res = data.union(stream)
-    from operator import add
-    result = local_sql.createDataFrame(res.rdd.foldByKey(0, add), schema)
-    writer(result, table)
-
-    print "========== DONE WRITING ============== "
-
-def create_keyspace(storage):
-    from cassandra.cluster import Cluster
-
-    cluster = Cluster([storage.split(":")[0]])
-    session = cluster.connect()
-
-    session.execute("create KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 3}" % (storage.split(":")[1]))
-    session.execute("create table IF NOT EXISTS {}.{} (hashtag text primary key, count int)".format(storage.split(":")[1],storage.split(":")[2]))
 
 
-def save(stream, save_to, storage):
-    if 'cassandra' in save_to:
-        create_keyspace(storage)
-        globals()['storage'] = storage
-        stream.foreachRDD(write_to_cas)
-    else:
-        stream.saveAsTextFiles(storage)
+def process_frame(dataset, face_cascade):
+    base_path = os.path.dirname(os.path.realpath(__file__))
+    cascade_path = os.path.join(
+        base_path, 'haarcascade_frontalface_default.xml')
+    face_cascade = cv2.CascadeClassifier(cascade_path)
+
+    data = dataset.collect()
+    for datum in data:
+        try:
+            jpg = base64.b64decode(datum.get('data', None))
+        except TypeError:
+            return
+        frame = cv2.imdecode(np.fromstring(
+            jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(30, 30),
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+        # Draw a rectangle around the faces
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        datum['data'] = base64.b64encode(frame)
+#        producer.send(OUT_TOPIC_NAME,
+#                      key=datum['camera_id'],
+#                      value=json.dumps(datum))
 
 
 def main():
@@ -72,26 +53,21 @@ def main():
         print "<zk_quorum> - zk quorum to connect: zk-kafka-1-0.zk-kafka-1:2181,zk-kafka-1-1.zk-kafka-1:2181,zk-kafka-1-2.zk-kafka-1:2181"
         print "<topic_name> - kafka topic name: twitter-stream"
         print "<batch_duration> - spark streaming batch duration ~ how often data will be written"
-        print "<save_to> - hdfs or cassandra"
-        print "<storage> - save as text files to: hdfs://hdfs-namenode:8020/demo or to database: <host>:<keyspace>:<table>"
         exit(-1)
 
     spark_master = sys.argv[1]
     zk_quorum = sys.argv[2]
     topic_name = sys.argv[3]
-    batch_duration = int(sys.argv[5])
-    save_to = sys.argv[6]
-    storage = sys.argv[7]
-    sc = pyspark.SparkContext(spark_master, appName="TweeTics")
+    batch_duration = int(sys.argv[4])
+
+    sc = pyspark.SparkContext(spark_master, appName="VideoTics")
     ssc = streaming.StreamingContext(sc, batch_duration)
-    sql = SQLContext(sc)
 
-    cidess = kafka.KafkaUtils.createStream(ssc, zk_quorum, "videotics-consumer", {topic_name: 1}).map(lambda x: x[1])
-    sorted_counts = counts.transform(lambda rdd: rdd.sortByKey(ascending=False, keyfunc=lambda x: x[1]))
-    output = sorted_counts.map(lambda x: "%s %s" % (x[0], x[1]))
+    video = kafka.KafkaUtils.createStream(
+        ssc, zk_quorum, "video-consumer", {topic_name: 1}).map(lambda x: json.loads(x[1]))
 
+    output = video.foreachRDD(process_frame)
     output.pprint()
-    save(output, save_to, storage)
 
     ssc.start()
     ssc.awaitTermination()

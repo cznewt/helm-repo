@@ -24,7 +24,7 @@ kafka:
   # this address will be used if subchart deployment is disabled
   externalAddress: ""
   # Kafka topic name
-  topic: twitter-stream
+  topic: video-stream
   zookeeper:
     deployChart: false
     # Required
@@ -49,16 +49,4 @@ hdfs:
   externalAddress: ""
   path: /demo
 
-cassandra:
-  deployChart: false
-  externalAddress: ""
-  keyspace: "mirantis"
-  table: "videotics"
-
 resources:
-  #requests:
-  #  cpu: 100m
-  #  memory: 512Mi
-  #limits:
-  #  cpu: 100m
-  #  memory: 512Mi

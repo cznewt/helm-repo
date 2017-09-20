@@ -1,3 +1,5 @@
-description: A Helm chart for Tweetics - Spark job that parses videots from Kafka and stores hashtags popularity as text files (to HDFS) or to Cassandra.
+description: |
+    A Helm chart for VideoTics - A Spark job that parses videos from Kafka and
+    applies analytical filters.
 name: videotics
 version: 2.1.1
